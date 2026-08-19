@@ -1,0 +1,50 @@
+[
+    {
+        "author":  "CakesTwix",
+        "icon":  "https://www.google.com/s2/favicons?domain=cikava-ideya.top\u0026sz=256",
+        "lang":  "uk",
+        "license":  "GPL3",
+        "name":  "Р¦С–РєР°РІР° Р†РґРµСЏ",
+        "package":  "cikava-ideya",
+        "type":  "bangumi",
+        "url":  "cikava-ideya.js",
+        "version":  "v0.0.4",
+        "webSite":  "https://cikava-ideya.top"
+    },
+    {
+        "author":  "CakesTwix",
+        "icon":  "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSrZAw8JCRhrw1pDMb5_nYDPYQOPVC4T1JDH3PpLB5Bf35ts32ohXNFsRic\u0026s=10",
+        "lang":  "uk",
+        "license":  "MIT",
+        "name":  "DoramyWorld",
+        "package":  "doramy.world",
+        "type":  "bangumi",
+        "url":  "doramy.world.js",
+        "version":  "v0.0.2",
+        "webSite":  "https://doramy.world"
+    },
+    {
+        "author":  "ported",
+        "icon":  "https://www.google.com/s2/favicons?domain=uakino.best\u0026sz=256",
+        "lang":  "uk",
+        "license":  "MIT",
+        "name":  "Uakino",
+        "package":  "uakino",
+        "type":  "bangumi",
+        "url":  "uakino.js",
+        "version":  "v0.0.2",
+        "webSite":  "https://uakino.best"
+    },
+    {
+        "author":  "CakesTwix",
+        "icon":  "https://www.google.com/s2/favicons?domain=unimay.media\u0026sz=256",
+        "lang":  "uk",
+        "license":  "MIT",
+        "name":  "Unimay",
+        "package":  "unimay.media",
+        "type":  "bangumi",
+        "url":  "unimay.media.js",
+        "version":  "v0.0.2",
+        "webSite":  "https://api.unimay.media"
+    }
+]
