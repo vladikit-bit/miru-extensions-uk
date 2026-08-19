@@ -26,18 +26,12 @@ function fixDleJson(jsonStr) {
     return jsonStr.replace(/([{,]\s*)([^"'\s][^:,}]*?)(\s*:)/g, '$1"$2"$3');
 }
 
-// Helper to attempt HTTP fallback for hosts with bad TLS certs
-async function fetchWithTlsFallback(extensionInstance, url, options = {}) {
-    try {
-        return await extensionInstance.fetch(url, options);
-    } catch (e) {
-        if (String(e).includes("CERTIFICATE_VERIFY_FAILED") && url.startsWith("https://")) {
-            console.log("TLS Error detected, retrying with HTTP for:", url);
-            const httpUrl = url.replace("https://", "http://");
-            return extensionInstance.fetch(httpUrl, options);
-        }
-        throw e;
+// Helper to bypass self-signed TLS issues on Ashdi by falling back to HTTP
+function fixAshdiTls(url) {
+    if (url && url.includes("ashdi.vip")) {
+        return url.replace("https://", "http://");
     }
+    return url;
 }
 
 function isCikavaDeleted(text) {
@@ -159,74 +153,66 @@ export default class extends Extension {
 
     async detail(url) {
         const res = await this.fetch(url);
-
-        let diagnostic = [];
-        diagnostic.push("HTML_LENGTH=" + res.length);
-        diagnostic.push("HAS_SWITCHES=" + res.includes("switches"));
-
-        const scriptTags = res.match(/<script[\s\S]*?<\/script>/g) || [];
-        diagnostic.push("SCRIPT_COUNT=" + scriptTags.length);
-
-        const targetScript = scriptTags.find(s => s.includes("switches = Object"));
-        diagnostic.push("TARGET_FOUND=" + !!targetScript);
-
-        if (targetScript) {
-            // Додатково виводимо початок самого targetScript, щоб бачити контекст
-            diagnostic.push("TARGET_SCRIPT_START=" + targetScript.substring(0, 500));
-
-            const start = targetScript.indexOf("Object(") + "Object(".length;
-            const end = targetScript.lastIndexOf(");");
-
-            diagnostic.push("START=" + start);
-            diagnostic.push("END=" + end);
-
-            if (start > "Object(".length && end > start) {
-                const raw = targetScript.substring(start, end);
-                diagnostic.push("RAW=" + raw.substring(0, 1500));
-
-                const fixed = fixDleJson(raw);
-                diagnostic.push("FIXED=" + fixed.substring(0, 1500));
-
-                try {
-                    const parsed = JSON.parse(fixed);
-                    diagnostic.push("PARSE=OK");
-                    diagnostic.push("TOP_KEYS=" + Object.keys(parsed).join("|"));
-                    diagnostic.push("PLAYER1_TYPE=" + typeof parsed.Player1);
-                    diagnostic.push("PLAYER1=" + JSON.stringify(parsed.Player1).substring(0, 1000));
-                } catch (e) {
-                    diagnostic.push("PARSE_ERROR=" + String(e));
-                }
-            } else {
-                diagnostic.push("BOUNDARY_ERROR=Could not find Object(...); correctly");
-            }
-        } else {
-            // Якщо switches немає, шукаємо інші ознаки плеєра
-            const altScripts = scriptTags.filter(s => s.includes("Player") || s.includes("tortuga") || s.includes("file:"));
-            diagnostic.push("ALT_SCRIPT_COUNT=" + altScripts.length);
-            if (altScripts.length > 0) {
-                diagnostic.push("ALT_SCRIPT_SAMPLE=" + altScripts[0].substring(0, 500));
-            }
-            diagnostic.push("HAS_404=" + res.includes("404") || res.includes("not found"));
-            diagnostic.push("HAS_CLOUDFLARE=" + res.includes("cf-browser-verification") || res.includes("cloudflare"));
+        const playerJson = parseCikavaPlayerJson(res);
+        if (!hasCikavaPlayableMaterial(playerJson)) {
+            throw new Error("No playable material found for: " + url);
         }
 
-        throw new Error(
-            "CIKAVA_DIAGNOSTIC\n" +
-            diagnostic.join("\n")
-        );
+        const title = (await this.querySelector(res, ".full h1").text || "").trim();
+        const poster = await this.getAttributeText(res, ".img-fit img", "src");
+        const desc = (await this.querySelector(res, ".fdesc").text || "").trim();
+        
+        const player1 = playerJson.Player1;
+        
+        if (typeof player1 === 'string') {
+            return {
+                title,
+                cover: fixUrl(poster),
+                desc,
+                episodes: [{ title: "Фільм", urls: [{ name: "Фільм", url: fixUrl(player1) }] }]
+            };
+        } else if (typeof player1 === 'object' && player1 !== null) {
+            const episodes = [];
+            for (const seasonKey in player1) {
+                const seasonObj = player1[seasonKey];
+                const seasonEpisodes = [];
+                for (const episodeKey in seasonObj) {
+                    if (Object.prototype.hasOwnProperty.call(seasonObj, episodeKey)) {
+                        seasonEpisodes.push({
+                            name: episodeKey,
+                            url: fixUrl(seasonObj[episodeKey])
+                        });
+                    }
+                }
+                episodes.push({
+                    title: seasonKey,
+                    urls: seasonEpisodes
+                });
+            }
+            return {
+                title,
+                cover: fixUrl(poster),
+                desc,
+                episodes: episodes
+            };
+        } else {
+            throw new Error("Unknown player format for: " + url);
+        }
     }
+
     async watch(url) {
         const playerPageHeaders = {
             "Referer": "https://cikava-ideya.top/",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         };
 
-        // Use TLS fallback for problematic hosts like ashdi.vip
-        const res = await fetchWithTlsFallback(this, url, { headers: playerPageHeaders });
+        // Застосовуємо HTTP fallback для Ashdi перед запитом
+        const safeFetchUrl = fixAshdiTls(url);
+        const res = await this.fetch(safeFetchUrl, { headers: playerPageHeaders });
         
         const playerData = parseCikavaPlayerData(res);
         if (!playerData.streamUrl) {
-            throw new Error("No stream URL found on player page: " + url);
+            throw new Error("No stream URL found on player page: " + safeFetchUrl);
         }
         
         const subtitles = [];
@@ -237,9 +223,6 @@ export default class extends Extension {
             });
         }
 
-        // Determine Referer for playback
-        // If it's Ashdi, Anitubeinua uses "https://qeruya.cyou", Cikava uses "https://tortuga.wtf/"
-        // We extract the host from the stream URL to be safe, fallback to tortuga.wtf
         let playReferer = "https://tortuga.wtf/";
         try {
             const playUrlObj = new URL(fixUrl(playerData.streamUrl));
@@ -248,9 +231,12 @@ export default class extends Extension {
             console.log("Failed to parse Referer from stream URL, using default tortuga.wtf");
         }
 
+        // Застосовуємо HTTP fallback також до фінального m3u8 URL
+        const safeStreamUrl = fixAshdiTls(fixUrl(playerData.streamUrl));
+
         return {
             type: "hls",
-            url: fixUrl(playerData.streamUrl),
+            url: safeStreamUrl,
             headers: {
                 "Referer": playReferer,
                 "User-Agent": playerPageHeaders["User-Agent"]
