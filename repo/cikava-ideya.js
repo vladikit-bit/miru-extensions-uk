@@ -113,20 +113,30 @@ export default class extends Extension {
     }
 
     async latest(page) {
-        const res = await this.request(`/filmy/page/${page}`);
-        const items = await this.querySelectorAll(res, ".th-item");
-        const results = [];
-        for (const item of items) {
-            const html = item.content;
-            const qualityText = await this.querySelector(html, ".fquality").text;
-            if (isCikavaDeleted(qualityText)) continue;
-            const title = (await this.querySelector(html, ".th-title").text || "").trim();
-            const href = await this.getAttributeText(html, ".th-in", "href");
-            const posterUrl = await this.getAttributeText(html, ".img-fit img", "src");
-            results.push({ title, url: fixUrl(href), cover: fixUrl(posterUrl) });
-        }
-        return results;
+    const res = await this.request(`/filmy/page/${page}`);
+    const items = await this.querySelectorAll(res, ".th-item");
+    const results = [];
+
+    for (const item of items) {
+        const html = item.content;
+
+        const titleEl = await this.querySelector(html, ".th-title");
+        const title = titleEl ? ((await titleEl.text) || "").trim() : "";
+
+        const href = await this.getAttributeText(html, ".th-in", "href");
+        const posterUrl = await this.getAttributeText(html, ".img-fit img", "src");
+
+        if (!href) continue;
+
+        results.push({
+            title,
+            url: fixUrl(href),
+            cover: fixUrl(posterUrl)
+        });
     }
+
+    return results;
+}
 
     async search(kw, page, filter) {
         const res = await this.request("", {
